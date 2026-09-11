@@ -1,0 +1,6 @@
+sqlalchemy
+psycopg2-binary
+pandas
+faker
+apscheduler
+python-dotenv
