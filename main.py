@@ -1,14 +1,10 @@
 import logging
 
 from config import LOG_FILE, LOG_LEVEL
-from extract import (
-    extrair_usuarios,
-    marcar_processado,
-    criar_coluna_controle_se_nao_existir,
-)
-from transform import transformar
-from load import carregar, criar_tabela_mapeamento_se_nao_existir
 from extended_migration import executar_migracao_complementar
+from extract import extrair_usuarios
+from load import carregar, criar_tabela_mapeamento_se_nao_existir
+from transform import transformar
 
 
 logging.basicConfig(
@@ -16,7 +12,6 @@ logging.basicConfig(
     level=LOG_LEVEL,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
-
 logging.getLogger().addHandler(logging.StreamHandler())
 
 logger = logging.getLogger(__name__)
@@ -26,38 +21,20 @@ def executar():
     logger.info("=== Início da execução do RPA ===")
 
     try:
-        criar_coluna_controle_se_nao_existir()
+        # O mapping é o único controle de processamento. A origem é somente leitura.
         criar_tabela_mapeamento_se_nao_existir()
-
-        # ==========================================================
-        # 1. MIGRAÇÃO PRINCIPAL DOS USUÁRIOS
-        # ==========================================================
 
         df_origem = extrair_usuarios()
 
-        if not df_origem.empty:
-            ids_origem = df_origem["id"].tolist()
-
-            df_transformado = transformar(df_origem)
-
-            carregar(df_transformado)
-
-            marcar_processado(ids_origem)
-
-            logger.info(
-                "%s usuários migrados.",
-                len(df_transformado),
-            )
-
-        else:
+        if df_origem.empty:
             logger.info("Nenhum usuário novo encontrado.")
+        else:
+            df_transformado = transformar(df_origem)
+            carregar(df_transformado)
+            logger.info("%s usuários migrados.", len(df_transformado))
 
-        # ==========================================================
-        # 2. MIGRAÇÃO DAS DEMAIS TABELAS
-        # ==========================================================
-
+        # Pais são migrados antes dos filhos dentro da rotina complementar.
         executar_migracao_complementar()
-
         logger.info("Execução concluída com sucesso.")
 
     except Exception:
