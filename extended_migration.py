@@ -674,7 +674,7 @@ def migrar_projetos_tecnicos():
 def migrar_profissionais():
     df = pd.read_sql(
         """
-        SELECT id, id_usuario, profissao, cpf, id_fornecedor
+        SELECT id, id_usuario, profissao, id_fornecedor
         FROM profissional
         ORDER BY id
         """,
@@ -687,18 +687,6 @@ def migrar_profissionais():
             person_id, _, _ = _person_ids(row["id_usuario"], conn)
             if not person_id:
                 continue
-
-            cpf = _digits(row["cpf"], 11)
-            if cpf and len(cpf) == 11:
-                conflict = conn.execute(
-                    text("SELECT id FROM person WHERE cpf = :cpf AND id <> :id"),
-                    {"cpf": cpf, "id": person_id},
-                ).scalar()
-                if not conflict:
-                    conn.execute(
-                        text("UPDATE person SET cpf = :cpf WHERE id = :id"),
-                        {"cpf": cpf, "id": person_id},
-                    )
 
             technician_id = _mapping("profissional", row["id"], "technician", conn)
             if not technician_id:
@@ -1216,7 +1204,7 @@ TABELAS_SEM_EQUIVALENTE_DIRETO = {
     "loja_filial": "não há hierarquia matriz/filial no destino",
     "admin": "administrador da plataforma não possui equivalente no destino",
     "telefone_admin": "depende de admin, que não possui equivalente",
-    "log_acesso_admin": "não há log de autenticação equivalente",
+    "log_acessos_admin": "não há log de autenticação equivalente",
     "historico_alteracoes": "audit_log exige UUID e autoria não ambígua",
 }
 
