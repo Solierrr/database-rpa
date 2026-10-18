@@ -12,7 +12,7 @@ endif
 INSTALL_CMD   ?= python -m venv .venv && $(PY) -m pip install -r requirements.txt ruff==0.16.10
 DEV_CMD       ?= $(PY) main.py
 BUILD_CMD     ?= $(PY) -m compileall -q -x '(^|[^a-zA-Z0-9_])venv[^a-zA-Z0-9_.]' .
-TEST_CMD      ?=
+TEST_CMD      ?= $(PY) -m unittest discover -s tests
 LINT_CMD      ?= $(PY) -m ruff check --isolated --select E4,E7,E9,F .
 FORMAT_CMD    ?=
 CLEAN_PATHS   ?= .venv .pytest_cache .ruff_cache .mypy_cache

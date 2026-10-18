@@ -15,7 +15,8 @@ import pandas as pd
 from sqlalchemy import text
 
 from db import engine_destino, engine_origem
-from mock_data import mock_cnpj, mock_postcode, mock_start_date
+from mock_data import mock_cnpj, mock_postcode, mock_price, mock_start_date
+from schema_v29 import OWNER_POSITION, get_or_create_legacy_brand, unique_slug
 
 
 logger = logging.getLogger(__name__)
@@ -250,6 +251,7 @@ def _create_company_for_legacy(
     usuario_id,
     cnpj,
     razao_social,
+    company_type,
 ):
     existing = _mapping(origem_tabela, origem_id, "company", conn)
     if existing:
@@ -311,14 +313,16 @@ def _create_company_for_legacy(
         text("""
             INSERT INTO company (
                 id, fk_address, fk_business_contact, cnpj,
-                trade_name, corporate_name
+                trade_name, corporate_name, type, slug
             )
             VALUES (
                 :id, :address, :business_contact, :cnpj,
-                :trade_name, :corporate_name
+                :trade_name, :corporate_name, :type, :slug
             )
         """),
         {
+            "type": company_type,
+            "slug": unique_slug(conn, "company", corporate_name),
             "id": company_id,
             "address": address_id,
             "business_contact": business_contact_id,
@@ -374,12 +378,24 @@ def _link_user_company(
         logger.warning("Usuário %s sem mapping para users", usuario_id)
         return
 
-    position_id = _get_or_create_position(conn, "OWNER")
+    # O api-core permite um único vínculo por usuário e exige pelo menos um ADMIN por empresa.
+    other_company = conn.execute(
+        text("SELECT 1 FROM user_company WHERE fk_users = :users AND fk_company <> :company LIMIT 1"),
+        {"users": users_id, "company": company_id},
+    ).scalar()
+    if other_company:
+        logger.warning("Usuário %s já tem vínculo com outra empresa; vínculo da empresa %s ignorado", usuario_id, company_id)
+        return
+
+    position_id = _get_or_create_position(conn, OWNER_POSITION)
     conn.execute(
         text("""
             INSERT INTO company_positions (id, fk_company, fk_position)
-            VALUES (:id, :company, :position)
-            ON CONFLICT (fk_company, fk_position) DO NOTHING
+            SELECT :id, :company, :position
+            WHERE NOT EXISTS (
+                SELECT 1 FROM company_positions
+                WHERE fk_company = :company AND fk_position = :position
+            )
         """),
         {"id": _uuid(), "company": company_id, "position": position_id},
     )
@@ -441,6 +457,7 @@ def migrar_fornecedores():
                 row["id_usuario"],
                 row["cnpj"],
                 row["razao_social"],
+                "SUPPLIER",
             )
             supplier_id = _mapping("fornecedor", row["id"], "supplier", conn)
             if not supplier_id:
@@ -486,6 +503,7 @@ def migrar_demandantes():
                 row["id_usuario"],
                 row["cnpj"],
                 row["razao_social"],
+                "DEMANDANT",
             )
             requester_id = _mapping(
                 "empresa_demandante", row["id"], "requester", conn
@@ -692,8 +710,17 @@ def migrar_profissionais():
             if not technician_id:
                 technician_id = _uuid()
                 conn.execute(
-                    text("INSERT INTO technician (id, fk_person) VALUES (:id, :person)"),
-                    {"id": technician_id, "person": person_id},
+                    text("INSERT INTO technician (id, fk_person, slug) VALUES (:id, :person, :slug)"),
+                    {
+                        "id": technician_id,
+                        "person": person_id,
+                        "slug": unique_slug(
+                            conn,
+                            "technician",
+                            conn.execute(text("SELECT name FROM person WHERE id = :id"), {"id": person_id}).scalar()
+                            or f"profissional-{row['id']}",
+                        ),
+                    },
                 )
                 _save_mapping(
                     conn, "profissional", row["id"], "technician", technician_id
@@ -951,25 +978,30 @@ def migrar_produtos():
             efficiency = min(max(efficiency, Decimal("0")), Decimal("100"))
 
             model_id = _uuid()
+            brand_id = get_or_create_legacy_brand(conn, _txt(row["fabricante"]))
+            model_name = _txt(row["nome"], fallback=f"Produto {row['id']}")
+            # Largura e comprimento ficam em metros no schema atual; o legado guarda em milímetros.
             conn.execute(
                 text("""
                     INSERT INTO model (
-                        id, brand, model, power_wp, efficiency,
-                        dimension, weight, status
+                        id, fk_brand, model, power_wp, efficiency, dimension,
+                        weight, width, length, type, product_type, status
                     )
                     VALUES (
-                        :id, :brand, :model, :power, :efficiency,
-                        :dimension, :weight, 'UNDER_ANALYSIS'
+                        :id, :brand, :model, :power, :efficiency, :dimension,
+                        :weight, :width, :length, 'MONOCRYSTALLINE', 'PANEL', 'UNDER_ANALYSIS'
                     )
                 """),
                 {
                     "id": model_id,
-                    "brand": _txt(row["fabricante"], fallback="Não informado"),
-                    "model": _txt(row["nome"], fallback=f"Produto {row['id']}"),
+                    "brand": brand_id,
+                    "model": model_name,
                     "power": power,
                     "efficiency": efficiency,
                     "dimension": dimension,
                     "weight": weight,
+                    "width": width / Decimal("1000"),
+                    "length": length / Decimal("1000"),
                 },
             )
 
@@ -997,14 +1029,18 @@ def migrar_produtos():
                 if pd.isna(row["preco"])
                 else max(Decimal(str(row["preco"])), Decimal("0"))
             )
+            if price <= 0:
+                # O schema exige unit_price > 0; o preço ausente no legado vira um mock determinístico.
+                price = mock_price(row["id"])
             conn.execute(
                 text("""
                     INSERT INTO offer (
-                        id, fk_supplier, fk_model, unit_price, availability
+                        id, fk_supplier, fk_model, unit_price, availability, slug
                     )
-                    VALUES (:id, :supplier, :model, :price, :availability)
+                    VALUES (:id, :supplier, :model, :price, :availability, :slug)
                 """),
                 {
+                    "slug": unique_slug(conn, "offer", f"{_txt(row['fabricante'], fallback='')} {model_name}"),
                     "id": offer_id,
                     "supplier": supplier_id,
                     "model": model_id,
