@@ -3,6 +3,7 @@ import logging
 from config import LOG_FILE, LOG_LEVEL
 from extended_migration import executar_migracao_complementar
 from extract import extrair_usuarios
+from images import executar_imagens
 from load import carregar, criar_tabela_mapeamento_se_nao_existir
 from transform import transformar
 
@@ -35,6 +36,7 @@ def executar():
 
         # Pais são migrados antes dos filhos dentro da rotina complementar.
         executar_migracao_complementar()
+        executar_imagens()
         logger.info("Execução concluída com sucesso.")
 
     except Exception:
