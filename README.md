@@ -11,12 +11,12 @@ ETL em Python que migrou usuários e dados de um banco legado ("banco simples", 
 
 </p>
 
-## Status: descontinuado (decisão de 2026-10-18, aguardando confirmação do dono para arquivar)
+## Status: em escopo, precisa ser adaptado ao schema atual
 
-- **Não roda contra o schema atual do `coredb`.** Ele insere em `users` só `id` e `avatar`, mas `users.auth_id` e `users.username` são `NOT NULL` no schema atual do `database-console`; além disso grava em 23 tabelas (`users`, `person`, `contact`, `company`, `supplier`, `offer`, `inventory` e outras) sem passar pelo `api-core`, o que pula as regras dele (cargo ADMIN, vínculo único usuário-empresa, status de empresa, `auth_user`).
-- **A carga de dados tem outros caminhos:** o `seed` do `database-console` (desenvolvimento e QA) e `anexos/carga-dados-prod-v29.py` do VersioSpec (produção).
-- Não há implantação conhecida (não está no Render nem no `infra-gitops`). A decisão e o motivo estão na spec `dados/acesso-ao-coredb` do VersioSpec.
-- O código fica aqui para consulta enquanto o repositório não é arquivado. **Não execute contra um banco real.**
+- **Origem:** o banco legado dos serviços Elos, que não faz parte do escopo da Solaria e **não deve ser alterado** (a conexão é somente leitura).
+- **Destino:** o `coredb`. O que o legado não traz é preenchido com dados fictícios determinísticos (Faker, em `mock_data.py`), e as imagens podem vir do Cloudinary.
+- **Pendente:** ele foi escrito para um schema antigo e **não roda contra o schema atual** (V29 do `database-console`): insere em `users` só `id` e `avatar`, mas `users.auth_id` e `users.username` são `NOT NULL`, e grava em 23 tabelas (`users`, `person`, `contact`, `company`, `supplier`, `offer`, `inventory` e outras) sem passar pelo `api-core`, o que pula as regras dele (cargo ADMIN, vínculo único usuário-empresa, status de empresa, `auth_user`).
+- Não há implantação conhecida (não está no Render nem no `infra-gitops`). Não execute contra um banco real antes de adaptá-lo. O contexto está na spec `dados/acesso-ao-coredb` do VersioSpec.
 
 ## Arquivos
 
