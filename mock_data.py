@@ -51,3 +51,11 @@ def mock_start_date(origem_tabela: str, origem_id):
     base = datetime(2020, 1, 1, tzinfo=timezone.utc)
     days = _seed(f"{origem_tabela}_inicio", origem_id) % 2192
     return base + timedelta(days=days)
+
+
+def mock_price(produto_id):
+    """Preço unitário fictício (R$ 500,00 a R$ 2.000,00) para produto sem preço no legado."""
+    from decimal import Decimal
+
+    cents = 50000 + _seed("produto_preco", produto_id) % 150001
+    return Decimal(cents) / Decimal(100)

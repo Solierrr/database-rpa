@@ -4,6 +4,7 @@ import pandas as pd
 from sqlalchemy import text
 
 from db import engine_destino
+from schema_v29 import unique_username
 
 
 logger = logging.getLogger(__name__)
@@ -50,8 +51,8 @@ SQL_BACKFILL_CONTACT = text("""
 """)
 
 SQL_INSERT_USERS = text("""
-    INSERT INTO users (id, avatar)
-    VALUES (:users_id, :avatar)
+    INSERT INTO users (id, auth_id, username, avatar)
+    VALUES (:users_id, :auth_id, :username, :avatar)
 """)
 
 SQL_INSERT_CONTACT = text("""
@@ -90,6 +91,11 @@ def carregar(df: pd.DataFrame):
 
     registros = df.to_dict(orient="records")
     mapeamentos = []
+
+    with engine_destino.connect() as conn:
+        usernames = {row[0] for row in conn.execute(text("SELECT username FROM users"))}
+    for registro in registros:
+        registro["username"] = unique_username(usernames, registro["username_base"])
 
     for registro in registros:
         mapeamentos.extend([

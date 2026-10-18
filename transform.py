@@ -4,6 +4,7 @@ import uuid
 import pandas as pd
 
 from mock_data import mock_birth_date, mock_cpf
+from schema_v29 import new_auth_id, username_from
 
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,8 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
             "tipo_usuario": row["tipo_usuario"],
             "raio_procura_km": row["raio_procura_km"],
             "users_id": str(uuid.uuid4()),
+            "auth_id": new_auth_id(),
+            "username_base": username_from(row["email"], row["nome"], usuario_id),
             "contact_id": str(uuid.uuid4()),
             "person_id": str(uuid.uuid4()),
             "avatar": None,
