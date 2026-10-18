@@ -1,6 +1,6 @@
-# Finalidade do repositório
+# database-rpa
 
-Este repositório está reservado para o serviço `database-rpa` da organização Solaria. O `.gitignore` já configurado (padrão Python: `__pycache__/`, `*.py[codz]`, etc) indica que o serviço será implementado em Python — pelo nome, provavelmente automação (RPA) de tarefas relacionadas a dados/bancos de dados — mas isso ainda não foi confirmado em código, já que o repositório contém apenas `LICENSE`, `.gitignore` e este README.
+ETL em Python que migrou usuários e dados de um banco legado ("banco simples", tabela `usuario`) para o `coredb` da Solaria. Lê a origem (`ORIGEM_DB_URL`, somente leitura), transforma e **grava direto no `coredb`** (`DESTINO_DB_URL`), controlando a idempotência na tabela `rpa_id_mapping` do destino.
 
 <p>
 
@@ -11,10 +11,21 @@ Este repositório está reservado para o serviço `database-rpa` da organizaçã
 
 </p>
 
-## Status
+## Status: descontinuado (decisão de 2026-10-18, aguardando confirmação do dono para arquivar)
 
-- Nenhum código-fonte foi commitado ainda — o repositório só tem `LICENSE` e `.gitignore` (padrão Python), sem `.editorconfig`/template de Pull Request configurados.
-- `ARCHITECTURE.md` e `RUNNING.md` não foram criados propositalmente: documentar arquitetura e execução de um serviço sem código seria inventar conteúdo. Eles devem ser escritos a partir do template Python em [`docs-warehouse/templates/readme/running/python/`](https://github.com/Solierrr/docs-warehouse/tree/main/templates/readme/running/python) assim que o desenvolvimento começar.
+- **Não roda contra o schema atual do `coredb`.** Ele insere em `users` só `id` e `avatar`, mas `users.auth_id` e `users.username` são `NOT NULL` no schema atual do `database-console`; além disso grava em 23 tabelas (`users`, `person`, `contact`, `company`, `supplier`, `offer`, `inventory` e outras) sem passar pelo `api-core`, o que pula as regras dele (cargo ADMIN, vínculo único usuário-empresa, status de empresa, `auth_user`).
+- **A carga de dados tem outros caminhos:** o `seed` do `database-console` (desenvolvimento e QA) e `anexos/carga-dados-prod-v29.py` do VersioSpec (produção).
+- Não há implantação conhecida (não está no Render nem no `infra-gitops`). A decisão e o motivo estão na spec `dados/acesso-ao-coredb` do VersioSpec.
+- O código fica aqui para consulta enquanto o repositório não é arquivado. **Não execute contra um banco real.**
+
+## Arquivos
+
+| Arquivo | Papel |
+|---|---|
+| `main.py` | Orquestra a execução e registra em `rpa_etl.log` |
+| `extract.py`, `transform.py`, `load.py` | Extrai os usuários novos da origem, transforma e grava `users`, `contact` e `person` no destino |
+| `extended_migration.py` | Migração complementar (empresas, endereços, ofertas, estoque e outras tabelas) |
+| `mock_data.py`, `inspecionar.py` | Dados fictícios com Faker e inspeção do banco |
 
 ## Contribuindo
 
