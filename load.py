@@ -3,52 +3,13 @@ import logging
 import pandas as pd
 from sqlalchemy import text
 
-from db import engine_destino
+from db import destination_transaction, engine_destino
+from id_mapping import get_mapping
 from schema_v29 import unique_username
 
 
 logger = logging.getLogger(__name__)
 
-
-SQL_CRIAR_MAPEAMENTO = text("""
-    CREATE TABLE IF NOT EXISTS rpa_id_mapping (
-        id SERIAL PRIMARY KEY,
-        origem_tabela VARCHAR(50) NOT NULL,
-        origem_id BIGINT NOT NULL,
-        destino_tabela VARCHAR(50) NOT NULL,
-        destino_id UUID NOT NULL,
-        criado_em TIMESTAMP NOT NULL DEFAULT now(),
-        UNIQUE (origem_tabela, origem_id, destino_tabela)
-    )
-""")
-
-SQL_BACKFILL_USERS = text("""
-    INSERT INTO rpa_id_mapping (
-        origem_tabela, origem_id, destino_tabela, destino_id
-    )
-    SELECT
-        m.origem_tabela, m.origem_id, 'users', p.fk_users
-    FROM rpa_id_mapping m
-    INNER JOIN person p ON p.id = m.destino_id
-    WHERE m.origem_tabela = 'usuario'
-      AND m.destino_tabela = 'person'
-      AND p.fk_users IS NOT NULL
-    ON CONFLICT (origem_tabela, origem_id, destino_tabela) DO NOTHING
-""")
-
-SQL_BACKFILL_CONTACT = text("""
-    INSERT INTO rpa_id_mapping (
-        origem_tabela, origem_id, destino_tabela, destino_id
-    )
-    SELECT
-        m.origem_tabela, m.origem_id, 'contact', p.fk_contact
-    FROM rpa_id_mapping m
-    INNER JOIN person p ON p.id = m.destino_id
-    WHERE m.origem_tabela = 'usuario'
-      AND m.destino_tabela = 'person'
-      AND p.fk_contact IS NOT NULL
-    ON CONFLICT (origem_tabela, origem_id, destino_tabela) DO NOTHING
-""")
 
 SQL_INSERT_USERS = text("""
     INSERT INTO users (id, auth_id, username, avatar)
@@ -65,24 +26,6 @@ SQL_INSERT_PERSON = text("""
     VALUES (:person_id, :users_id, :contact_id, :name, :cpf, :birth_date)
 """)
 
-SQL_INSERT_MAPEAMENTO = text("""
-    INSERT INTO rpa_id_mapping (
-        origem_tabela, origem_id, destino_tabela, destino_id
-    )
-    VALUES (
-        :origem_tabela, :origem_id, :destino_tabela, :destino_id
-    )
-    ON CONFLICT (origem_tabela, origem_id, destino_tabela) DO NOTHING
-""")
-
-
-def criar_tabela_mapeamento_se_nao_existir():
-    """Cria o mapping e completa mappings gerados pela versão anterior."""
-    with engine_destino.begin() as conn:
-        conn.execute(SQL_CRIAR_MAPEAMENTO)
-        conn.execute(SQL_BACKFILL_USERS)
-        conn.execute(SQL_BACKFILL_CONTACT)
-
 
 def carregar(df: pd.DataFrame):
     if df.empty:
@@ -90,39 +33,24 @@ def carregar(df: pd.DataFrame):
         return
 
     registros = df.to_dict(orient="records")
-    mapeamentos = []
 
     with engine_destino.connect() as conn:
         usernames = {row[0] for row in conn.execute(text("SELECT username FROM users"))}
     for registro in registros:
         registro["username"] = unique_username(usernames, registro["username_base"])
 
-    for registro in registros:
-        mapeamentos.extend([
-            {
-                "origem_tabela": "usuario",
-                "origem_id": registro["id_origem"],
-                "destino_tabela": "users",
-                "destino_id": registro["users_id"],
-            },
-            {
-                "origem_tabela": "usuario",
-                "origem_id": registro["id_origem"],
-                "destino_tabela": "contact",
-                "destino_id": registro["contact_id"],
-            },
-            {
-                "origem_tabela": "usuario",
-                "origem_id": registro["id_origem"],
-                "destino_tabela": "person",
-                "destino_id": registro["person_id"],
-            },
-        ])
+    mapping = get_mapping()
 
-    with engine_destino.begin() as conn:
+    with destination_transaction() as conn:
         conn.execute(SQL_INSERT_USERS, registros)
         conn.execute(SQL_INSERT_CONTACT, registros)
         conn.execute(SQL_INSERT_PERSON, registros)
-        conn.execute(SQL_INSERT_MAPEAMENTO, mapeamentos)
+        for registro in registros:
+            for destino_tabela, destino_id in (
+                ("users", registro["users_id"]),
+                ("contact", registro["contact_id"]),
+                ("person", registro["person_id"]),
+            ):
+                mapping.save("usuario", registro["id_origem"], destino_tabela, destino_id)
 
     logger.info("%s pessoas gravadas no destino.", len(registros))

@@ -20,6 +20,8 @@ if not ORIGEM_DB_URL or not DESTINO_DB_URL:
         "Confira se o arquivo .env está na raiz do projeto."
     )
 
+MAPPING_DB_PATH = os.getenv("RPA_MAPPING_DB", "rpa_id_mapping.sqlite")
+
 # Locale do Faker para gerar dados fictícios coerentes com pt-BR
 FAKER_LOCALE = "pt_BR"
 
