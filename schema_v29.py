@@ -55,7 +55,7 @@ def unique_username(taken, base):
 
 
 def new_auth_id():
-    """`users.auth_id` aponta para a conta no authdb. O ETL não escreve no authdb: gera um id sem conta,
+    """`user_account.auth_id` aponta para a conta no authdb. O ETL não escreve no authdb: gera um id sem conta,
     então o usuário migrado só consegue entrar depois que uma conta com esse id for criada."""
     return str(uuid.uuid4())
 
@@ -75,7 +75,7 @@ def get_or_create_legacy_brand(conn, name):
     brand_id = str(uuid.uuid4())
     conn.execute(
         text("""
-            INSERT INTO brand (id, name, normalized_name, visibility, legacy)
+            INSERT INTO brand (id, name, normalized_name, visibility, is_legacy)
             VALUES (:id, :name, :normalized, 'PRIVATE', true)
         """),
         {"id": brand_id, "name": display, "normalized": normalized},

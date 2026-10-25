@@ -4,7 +4,7 @@ from config import LOG_FILE, LOG_LEVEL
 from extended_migration import executar_migracao_complementar
 from extract import extrair_usuarios
 from images import executar_imagens
-from load import carregar, criar_tabela_mapeamento_se_nao_existir
+from load import carregar
 from transform import transformar
 
 
@@ -23,8 +23,6 @@ def executar():
 
     try:
         # O mapping é o único controle de processamento. A origem é somente leitura.
-        criar_tabela_mapeamento_se_nao_existir()
-
         df_origem = extrair_usuarios()
 
         if df_origem.empty:
