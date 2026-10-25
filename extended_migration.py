@@ -58,11 +58,11 @@ def _person_ids(usuario_id, conn=None):
     if not person_id:
         return None, None, None
 
-    users_id = _mapping("usuario", usuario_id, "users")
+    users_id = _mapping("usuario", usuario_id, "user_account")
     contact_id = _mapping("usuario", usuario_id, "contact")
 
     if not users_id or not contact_id:
-        query = text("SELECT fk_users, fk_contact FROM person WHERE id = :id")
+        query = text("SELECT user_id, contact_id FROM person WHERE id = :id")
         if conn is not None:
             row = conn.execute(query, {"id": person_id}).mappings().first()
         else:
@@ -70,12 +70,12 @@ def _person_ids(usuario_id, conn=None):
                 row = connection.execute(query, {"id": person_id}).mappings().first()
         if not row:
             return None, None, None
-        users_id = users_id or row["fk_users"]
-        contact_id = contact_id or row["fk_contact"]
+        users_id = users_id or row["user_id"]
+        contact_id = contact_id or row["contact_id"]
 
         if conn is not None:
             if users_id:
-                _save_mapping("usuario", usuario_id, "users", users_id)
+                _save_mapping("usuario", usuario_id, "user_account", users_id)
             if contact_id:
                 _save_mapping("usuario", usuario_id, "contact", contact_id)
 
@@ -125,7 +125,7 @@ def migrar_perfis():
 
     with destination_transaction() as conn:
         for row in df.to_dict("records"):
-            if _mapping("perfil", row["id"], "users"):
+            if _mapping("perfil", row["id"], "user_account"):
                 continue
 
             _, users_id, _ = _person_ids(row["id_usuario"], conn)
@@ -135,10 +135,10 @@ def migrar_perfis():
             avatar = _txt(row["foto_perfil"])
             if avatar:
                 conn.execute(
-                    text("UPDATE users SET avatar = :avatar WHERE id = :id"),
+                    text("UPDATE user_account SET avatar = :avatar WHERE id = :id"),
                     {"avatar": avatar, "id": users_id},
                 )
-            _save_mapping("perfil", row["id"], "users", users_id)
+            _save_mapping("perfil", row["id"], "user_account", users_id)
             total += 1
 
     logger.info("Perfis migrados: %s", total)
@@ -235,7 +235,7 @@ def _create_company_for_legacy(
     # Uma empresa pode exercer mais de um papel. Reutiliza company pelo CNPJ.
     company_row = conn.execute(
         text("""
-            SELECT id, fk_business_contact
+            SELECT id, business_contact_id
             FROM company
             WHERE cnpj = :cnpj
             LIMIT 1
@@ -247,7 +247,7 @@ def _create_company_for_legacy(
             origem_tabela,
             origem_id,
             "business_contact",
-            company_row["fk_business_contact"],
+            company_row["business_contact_id"],
         )
         _save_mapping(origem_tabela, origem_id, "company", company_row["id"])
         return company_row["id"]
@@ -283,7 +283,7 @@ def _create_company_for_legacy(
     conn.execute(
         text("""
             INSERT INTO company (
-                id, fk_address, fk_business_contact, cnpj,
+                id, address_id, business_contact_id, cnpj,
                 trade_name, corporate_name, type, slug
             )
             VALUES (
@@ -314,7 +314,7 @@ def _create_company_for_legacy(
 
 def _get_or_create_position(conn, name: str, accesses: str = "DEFAULT"):
     position_id = conn.execute(
-        text("SELECT id FROM position WHERE name = :name ORDER BY id LIMIT 1"),
+        text("SELECT id FROM job_position WHERE name = :name ORDER BY id LIMIT 1"),
         {"name": name},
     ).scalar()
     if position_id:
@@ -323,7 +323,7 @@ def _get_or_create_position(conn, name: str, accesses: str = "DEFAULT"):
     position_id = _uuid()
     conn.execute(
         text("""
-            INSERT INTO position (id, name, accesses)
+            INSERT INTO job_position (id, name, accesses)
             VALUES (:id, :name, :accesses)
         """),
         {"id": position_id, "name": name, "accesses": accesses},
@@ -341,7 +341,7 @@ def _link_user_company(
     if _mapping(origem_tabela, origem_id, "user_company"):
         return
 
-    users_id = _mapping("usuario", usuario_id, "users")
+    users_id = _mapping("usuario", usuario_id, "user_account")
     if not users_id:
         _, users_id, _ = _person_ids(usuario_id, conn)
     if not users_id:
@@ -350,7 +350,7 @@ def _link_user_company(
 
     # O api-core permite um único vínculo por usuário e exige pelo menos um ADMIN por empresa.
     other_company = conn.execute(
-        text("SELECT 1 FROM user_company WHERE fk_users = :users AND fk_company <> :company LIMIT 1"),
+        text("SELECT 1 FROM user_company WHERE user_id = :users AND company_id <> :company LIMIT 1"),
         {"users": users_id, "company": company_id},
     ).scalar()
     if other_company:
@@ -360,11 +360,11 @@ def _link_user_company(
     position_id = _get_or_create_position(conn, OWNER_POSITION)
     conn.execute(
         text("""
-            INSERT INTO company_positions (id, fk_company, fk_position)
+            INSERT INTO company_position (id, company_id, job_position_id)
             SELECT :id, :company, :position
             WHERE NOT EXISTS (
-                SELECT 1 FROM company_positions
-                WHERE fk_company = :company AND fk_position = :position
+                SELECT 1 FROM company_position
+                WHERE company_id = :company AND job_position_id = :position
             )
         """),
         {"id": _uuid(), "company": company_id, "position": position_id},
@@ -374,9 +374,9 @@ def _link_user_company(
         text("""
             SELECT id
             FROM user_company
-            WHERE fk_company = :company
-              AND fk_users = :users
-              AND fk_position = :position
+            WHERE company_id = :company
+              AND user_id = :users
+              AND job_position_id = :position
             ORDER BY id
             LIMIT 1
         """),
@@ -387,7 +387,7 @@ def _link_user_company(
     if not existing:
         conn.execute(
             text("""
-                INSERT INTO user_company (id, fk_company, fk_users, fk_position)
+                INSERT INTO user_company (id, company_id, user_id, job_position_id)
                 VALUES (:id, :company, :users, :position)
             """),
             {
@@ -433,7 +433,7 @@ def migrar_fornecedores():
                 supplier_id = _uuid()
                 conn.execute(
                     text("""
-                        INSERT INTO supplier (id, fk_company, status, business_type)
+                        INSERT INTO supplier (id, company_id, status, business_type)
                         VALUES (:id, :company, 'ACTIVE', :business_type)
                     """),
                     {
@@ -472,7 +472,7 @@ def migrar_demandantes():
                 row["id_usuario"],
                 row["cnpj"],
                 row["razao_social"],
-                "DEMANDANT",
+                "REQUESTER",
             )
             requester_id = _mapping(
                 "empresa_demandante", row["id"], "requester"
@@ -481,7 +481,7 @@ def migrar_demandantes():
                 requester_id = _uuid()
                 conn.execute(
                     text("""
-                        INSERT INTO requester (id, fk_company, business_type)
+                        INSERT INTO requester (id, company_id, business_type)
                         VALUES (:id, :company, 'REQUESTER')
                     """),
                     {"id": requester_id, "company": company_id},
@@ -543,7 +543,7 @@ def migrar_unidades_locais():
             conn.execute(
                 text("""
                     INSERT INTO local_unit (
-                        id, fk_requester, fk_address, complement, location_type
+                        id, requester_id, address_id, complement, location_type
                     )
                     VALUES (
                         :id, :requester, :address, :complement, :location_type
@@ -616,7 +616,7 @@ def migrar_projetos_tecnicos():
                 text("""
                     SELECT id
                     FROM local_unit
-                    WHERE fk_requester = :requester
+                    WHERE requester_id = :requester
                     ORDER BY id
                     LIMIT 1
                 """),
@@ -630,7 +630,7 @@ def migrar_projetos_tecnicos():
             conn.execute(
                 text("""
                     INSERT INTO technical_project (
-                        id, fk_requester, fk_local_unit, status, start_date, end_date
+                        id, requester_id, local_unit_id, status, starts_at, ends_at
                     )
                     VALUES (
                         :id, :requester, :local_unit, 'OPEN', :start_date, NULL
@@ -675,7 +675,7 @@ def migrar_profissionais():
             if not technician_id:
                 technician_id = _uuid()
                 conn.execute(
-                    text("INSERT INTO technician (id, fk_person, slug) VALUES (:id, :person, :slug)"),
+                    text("INSERT INTO technician (id, person_id, slug) VALUES (:id, :person, :slug)"),
                     {
                         "id": technician_id,
                         "person": person_id,
@@ -701,7 +701,7 @@ def migrar_profissionais():
                 profession_id = _uuid()
                 conn.execute(
                     text("""
-                        INSERT INTO profession (id, name, requires_registration)
+                        INSERT INTO profession (id, name, is_registration_required)
                         VALUES (:id, :name, false)
                     """),
                     {"id": profession_id, "name": profession_name},
@@ -723,7 +723,7 @@ def migrar_profissionais():
                 text("""
                     SELECT id
                     FROM technician_affiliation
-                    WHERE fk_company = :company AND fk_technician = :technician
+                    WHERE company_id = :company AND technician_id = :technician
                     LIMIT 1
                 """),
                 {"company": company_id, "technician": technician_id},
@@ -733,7 +733,7 @@ def migrar_profissionais():
                 conn.execute(
                     text("""
                         INSERT INTO technician_affiliation (
-                            id, fk_company, fk_technician, affiliation_type
+                            id, company_id, technician_id, affiliation_type
                         )
                         VALUES (:id, :company, :technician, 'AFFILIATED')
                     """),
@@ -771,23 +771,23 @@ def migrar_planos():
 
     with destination_transaction() as conn:
         for row in df.to_dict("records"):
-            if _mapping("plano", row["id"], "company_plans"):
+            if _mapping("plano", row["id"], "company_plan"):
                 continue
             plan_id = _uuid()
             value = Decimal("0") if pd.isna(row["valor"]) else Decimal(str(row["valor"]))
             conn.execute(
                 text("""
-                    INSERT INTO company_plans (id, name, value, cycle)
-                    VALUES (:id, :name, :value, :cycle)
+                    INSERT INTO company_plan (id, name, price, cycle)
+                    VALUES (:id, :name, :price, :cycle)
                 """),
                 {
                     "id": plan_id,
                     "name": _txt(row["nome"], fallback=f"Plano {row['id']}"),
-                    "value": value,
+                    "price": value,
                     "cycle": _cycle(row["tipo_mensalidade"]),
                 },
             )
-            _save_mapping("plano", row["id"], "company_plans", plan_id)
+            _save_mapping("plano", row["id"], "company_plan", plan_id)
             total += 1
 
     logger.info("Planos migrados: %s", total)
@@ -828,7 +828,7 @@ def migrar_assinaturas():
                 continue
 
             supplier_id = _supplier_by_user(row["id_usuario"])
-            plan_id = _mapping("plano", row["id_plano"], "company_plans")
+            plan_id = _mapping("plano", row["id_plano"], "company_plan")
             if not supplier_id or not plan_id:
                 logger.warning(
                     "Assinatura %s ignorada: destino exige supplier e plano",
@@ -852,12 +852,12 @@ def migrar_assinaturas():
             conn.execute(
                 text("""
                     INSERT INTO subscription (
-                        id, fk_supplier, fk_plan, status, auto_renewal,
-                        start_date, end_date
+                        id, supplier_id, company_plan_id, status, has_auto_renewal,
+                        starts_at, ends_at
                     )
                     VALUES (
                         :id, :supplier, :plan, :status, :auto_renewal,
-                        :start_date, :end_date
+                        :starts_at, :ends_at
                     )
                 """),
                 {
@@ -866,8 +866,8 @@ def migrar_assinaturas():
                     "plan": plan_id,
                     "status": status,
                     "auto_renewal": auto_renewal,
-                    "start_date": start,
-                    "end_date": end,
+                    "starts_at": start,
+                    "ends_at": end,
                 },
             )
             _save_mapping(
@@ -947,7 +947,7 @@ def migrar_produtos():
             conn.execute(
                 text("""
                     INSERT INTO model (
-                        id, fk_brand, model, power_wp, efficiency, dimension,
+                        id, brand_id, model_name, power_wp, efficiency, dimension,
                         weight, width, length, type, product_type, status
                     )
                     VALUES (
@@ -977,7 +977,7 @@ def migrar_produtos():
             offer_id = _uuid()
             conn.execute(
                 text("""
-                    INSERT INTO inventory (id, fk_supplier, fk_model, quantity)
+                    INSERT INTO inventory (id, supplier_id, model_id, quantity)
                     VALUES (:id, :supplier, :model, :quantity)
                 """),
                 {
@@ -998,7 +998,7 @@ def migrar_produtos():
             conn.execute(
                 text("""
                     INSERT INTO offer (
-                        id, fk_supplier, fk_model, unit_price, availability, slug
+                        id, supplier_id, model_id, unit_price, availability, slug
                     )
                     VALUES (:id, :supplier, :model, :price, :availability, :slug)
                 """),
@@ -1106,8 +1106,8 @@ def migrar_qualificacoes():
                 conn.execute(
                     text("""
                         INSERT INTO professional_registration (
-                            id, fk_technician, fk_profession,
-                            council, number, expiration_date
+                            id, technician_id, profession_id,
+                            council, number, expires_at
                         )
                         VALUES (
                             :id, :technician, :profession,
@@ -1128,7 +1128,7 @@ def migrar_qualificacoes():
                 conn.execute(
                     text("""
                         UPDATE profession
-                        SET requires_registration = true
+                        SET is_registration_required = true
                         WHERE id = :id
                     """),
                     {"id": profession_id},
@@ -1144,7 +1144,7 @@ def migrar_qualificacoes():
                 conn.execute(
                     text("""
                         INSERT INTO certification (
-                            id, fk_technician, type, information, image
+                            id, technician_id, type, information, image
                         )
                         VALUES (:id, :technician, :type, :information, :image)
                     """),

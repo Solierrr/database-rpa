@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parent.parent / "mocks-warehouse" / "manifest.json"
 USER_CATEGORY = {"professional": "users/pfp/professionals", "supplier": "users/pfp/suitman", "client": "users/pfp/clients"}
-BANNER_CATEGORY = {"SUPPLIER": "enterprises/banners/solar", "DEMANDANT": "enterprises/banners/corporate"}
+BANNER_CATEGORY = {"SUPPLIER": "enterprises/banners/solar", "REQUESTER": "enterprises/banners/corporate"}
 MODEL_PRIMARY = "products/solar-panels/hero"
 MODEL_GALLERY = "products/solar-panels/demo"
 GALLERY_SIZE = 2
@@ -97,19 +97,19 @@ def attach_images(conn, catalog, mapping):
 
     users = _query(conn, """
         SELECT u.id,
-               EXISTS (SELECT 1 FROM person p JOIN technician t ON t.fk_person = p.id WHERE p.fk_users = u.id) AS professional,
-               EXISTS (SELECT 1 FROM user_company uc JOIN company c ON c.id = uc.fk_company
-                       WHERE uc.fk_users = u.id AND c.type = 'SUPPLIER') AS supplier
-        FROM users u
+               EXISTS (SELECT 1 FROM person p JOIN technician t ON t.person_id = p.id WHERE p.user_id = u.id) AS professional,
+               EXISTS (SELECT 1 FROM user_company uc JOIN company c ON c.id = uc.company_id
+                       WHERE uc.user_id = u.id AND c.type = 'SUPPLIER') AS supplier
+        FROM user_account u
         WHERE u.id IN :ids
-          AND NOT EXISTS (SELECT 1 FROM user_photo up WHERE up.fk_user = u.id AND up.type = 'PROFILE')
-    """, mapping.destination_ids("usuario", "users"))
+          AND NOT EXISTS (SELECT 1 FROM user_photo up WHERE up.user_id = u.id AND up.type = 'PROFILE')
+    """, mapping.destination_ids("usuario", "user_account"))
     for user in users:
         kind = "professional" if user["professional"] else ("supplier" if user["supplier"] else "client")
         asset = catalog.pick(USER_CATEGORY[kind], user["id"])
         if asset:
             conn.execute(text("""
-                INSERT INTO user_photo (id, fk_user, type, url, public_id, created_at, crop_x, crop_y, crop_width, crop_height)
+                INSERT INTO user_photo (id, user_id, type, url, public_id, created_at, crop_x, crop_y, crop_width, crop_height)
                 VALUES (:id, :user, 'PROFILE', :url, :public_id, now(), :crop_x, :crop_y, :crop_width, :crop_height)
             """), _photo_row(catalog, asset, user=user["id"], **catalog.crop_columns(asset)))
             counts["user_photo"] += 1
@@ -121,14 +121,14 @@ def attach_images(conn, catalog, mapping):
         SELECT c.id, c.type
         FROM company c
         WHERE c.id IN :ids
-          AND NOT EXISTS (SELECT 1 FROM company_photo cp WHERE cp.fk_company = c.id)
+          AND NOT EXISTS (SELECT 1 FROM company_photo cp WHERE cp.company_id = c.id)
     """, company_ids)
     for company in companies:
         for kind, category in (("PROFILE", "enterprises/pfp"), ("BANNER", BANNER_CATEGORY[company["type"]])):
             asset = catalog.pick(category, company["id"])
             if asset:
                 conn.execute(text("""
-                    INSERT INTO company_photo (id, fk_company, type, url, public_id, created_at, crop_x, crop_y, crop_width, crop_height)
+                    INSERT INTO company_photo (id, company_id, type, url, public_id, created_at, crop_x, crop_y, crop_width, crop_height)
                     VALUES (:id, :company, :type, :url, :public_id, now(), :crop_x, :crop_y, :crop_width, :crop_height)
                 """), _photo_row(catalog, asset, company=company["id"], type=kind, **catalog.crop_columns(asset)))
                 counts["company_photo"] += 1
@@ -137,7 +137,7 @@ def attach_images(conn, catalog, mapping):
         SELECT m.id
         FROM model m
         WHERE m.id IN :ids
-          AND NOT EXISTS (SELECT 1 FROM model_photo mp WHERE mp.fk_model = m.id)
+          AND NOT EXISTS (SELECT 1 FROM model_photo mp WHERE mp.model_id = m.id)
     """, mapping.destination_ids("produto", "model"))
     for model in models:
         chosen = [(catalog.pick(MODEL_PRIMARY, model["id"]), True)]
@@ -145,7 +145,7 @@ def attach_images(conn, catalog, mapping):
         for asset, primary in chosen:
             if asset:
                 conn.execute(text("""
-                    INSERT INTO model_photo (id, fk_model, url, public_id, created_at, is_primary)
+                    INSERT INTO model_photo (id, model_id, url, public_id, created_at, is_primary)
                     VALUES (:id, :model, :url, :public_id, now(), :primary)
                 """), _photo_row(catalog, asset, model=model["id"], primary=primary))
                 counts["model_photo"] += 1

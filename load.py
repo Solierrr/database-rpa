@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 SQL_INSERT_USERS = text("""
-    INSERT INTO users (id, auth_id, username, avatar)
-    VALUES (:users_id, :auth_id, :username, :avatar)
+    INSERT INTO user_account (id, auth_id, username, avatar)
+    VALUES (:user_id, :auth_id, :username, :avatar)
 """)
 
 SQL_INSERT_CONTACT = text("""
@@ -22,8 +22,8 @@ SQL_INSERT_CONTACT = text("""
 """)
 
 SQL_INSERT_PERSON = text("""
-    INSERT INTO person (id, fk_users, fk_contact, name, cpf, birth_date)
-    VALUES (:person_id, :users_id, :contact_id, :name, :cpf, :birth_date)
+    INSERT INTO person (id, user_id, contact_id, name, cpf, birth_date)
+    VALUES (:person_id, :user_id, :contact_id, :name, :cpf, :birth_date)
 """)
 
 
@@ -35,7 +35,7 @@ def carregar(df: pd.DataFrame):
     registros = df.to_dict(orient="records")
 
     with engine_destino.connect() as conn:
-        usernames = {row[0] for row in conn.execute(text("SELECT username FROM users"))}
+        usernames = {row[0] for row in conn.execute(text("SELECT username FROM user_account"))}
     for registro in registros:
         registro["username"] = unique_username(usernames, registro["username_base"])
 
@@ -47,7 +47,7 @@ def carregar(df: pd.DataFrame):
         conn.execute(SQL_INSERT_PERSON, registros)
         for registro in registros:
             for destino_tabela, destino_id in (
-                ("users", registro["users_id"]),
+                ("user_account", registro["user_id"]),
                 ("contact", registro["contact_id"]),
                 ("person", registro["person_id"]),
             ):

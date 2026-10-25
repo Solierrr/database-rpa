@@ -23,7 +23,7 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
             "id_origem": usuario_id,
             "tipo_usuario": row["tipo_usuario"],
             "raio_procura_km": row["raio_procura_km"],
-            "users_id": str(uuid.uuid4()),
+            "user_id": str(uuid.uuid4()),
             "auth_id": new_auth_id(),
             "username_base": username_from(row["email"], row["nome"], usuario_id),
             "contact_id": str(uuid.uuid4()),
