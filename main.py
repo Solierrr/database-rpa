@@ -40,7 +40,9 @@ def executar():
         logger.info("Execução concluída com sucesso.")
 
     except Exception:
+        # Relança para o processo terminar com erro e a execução agendada aparecer como falha.
         logger.exception("Falha na execução do RPA")
+        raise
 
     finally:
         logger.info("=== Fim da execução ===\n")

@@ -18,7 +18,16 @@ ETL em Python que migrou usuários e dados de um banco legado ("banco simples", 
 - **O que o ETL respeita no V29** (regras em `schema_v29.py`): `users.auth_id` e `users.username` (`^[a-z0-9_]{3,30}$`, único, derivado do e-mail), `company.type` (`SUPPLIER` ou `DEMANDANT`) e `slug` único, `technician.slug` e `offer.slug` únicos, marca do modelo em `brand` (`legacy = true`), largura e comprimento do modelo em metros, tipo `MONOCRYSTALLINE`, preço da oferta maior que zero, vínculo do dono da empresa com o cargo `ADMIN` e um único vínculo por usuário.
 - **Imagens:** com `CLOUDINARY_CLOUD_NAME` definido, usuários, empresas e modelos migrados recebem fotos do `mocks-warehouse` (`user_photo`, `company_photo` e `model_photo`, as mesmas categorias do seed do `database-console`); `MOCKS_MANIFEST` aponta o `manifest.json` (padrão `../mocks-warehouse/manifest.json`) e `MOCKS_PUBLIC_PREFIX` o prefixo (padrão `mocks`). Sem a cloud ou o manifest, o passo é pulado com um aviso. Só entram registros que ainda não têm foto.
 - **Limites conhecidos:** `users.auth_id` é um id sem conta no authdb, porque o ETL não escreve no authdb; os usuários migrados só entram depois que uma conta com esse id for criada (a senha do legado não é reaproveitada). Os projetos técnicos só migram se o legado tiver `projeto` e `usuario_projeto`.
-- Foi verificado contra um `coredb` novo (migrações V1 a V29) e um legado de teste, incluindo uma segunda execução sem duplicar nada. Não há implantação conhecida (não está no Render nem no `infra-gitops`); não execute contra um banco real sem antes revisar os dados.
+- Foi verificado contra um `coredb` novo (migrações V1 a V29) e um legado de teste, incluindo uma segunda execução sem duplicar nada. Não está no Render nem no `infra-gitops`; não execute contra um banco real sem antes revisar os dados.
+
+## Execução agendada
+
+O workflow `.github/workflows/scheduled-migration.yml` roda a migração todo dia às 06:00 UTC e também pelo botão "Run workflow" do GitHub Actions.
+
+- O agendamento só roda com a variável de repositório `RPA_SCHEDULE_ENABLED` igual a `true`. A execução manual não depende dela.
+- As conexões vêm dos segredos do repositório `ORIGEM_DB_URL` e `DESTINO_DB_URL`, replicados do Infisical. Sem eles, o job só registra um aviso e não toca em nenhum banco.
+- Com o segredo `CLOUDINARY_CLOUD_NAME`, as imagens vêm do `manifest.json` do `mocks-warehouse`.
+- Só roda uma execução por vez. O `rpa_etl.log` fica como artefato da execução por 14 dias, e uma falha na migração faz o job falhar.
 
 ## Arquivos
 
