@@ -1,6 +1,6 @@
-sqlalchemy==2.1.4
+sqlalchemy==2.1.5
 psycopg2-binary==2.9.13
 pandas==3.0.6
-faker==40.41.0
+faker==40.43.0
 apscheduler==3.11.3
 python-dotenv==1.2.4
