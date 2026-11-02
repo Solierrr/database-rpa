@@ -26,7 +26,6 @@ A execução usa Python para ler PostgreSQL e gravar diretamente no banco de neg
 - [STATUS.md](./docs/STATUS.md), cobertura e limitações atuais.
 - [Fluxos](./flows/), importação, associação de imagens e execução agendada.
 - [Banco de dados](./database/), tabela de correspondência mantida pela rotina.
-- [PENDENCIAS.md](./PENDENCIAS.md), decisões que dependem do responsável.
 
 ## Contribuindo
 
